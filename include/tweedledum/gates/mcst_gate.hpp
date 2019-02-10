@@ -115,6 +115,53 @@ public:
 		assert(0);
 		std::abort();
 	}
+
+	bool is_dependent(mcst_gate const& other) const
+	{
+		if (*this == other) {
+			return false;
+		}
+		if (this->is_z_rotation()) {
+			if (other.is_z_rotation()) {
+				return false;
+			}
+			if (other.is_x_rotation()) {
+				// Check if the target of the 'other' gate affects the controls
+				// of 'this' gate
+				for (auto i = 0u; i < max_num_qubits; ++i) {
+					if (i != target_
+					    && qid_slots_[i] == other.qid_slots_[other.target_]) {
+						return true;
+					}
+				}
+				return qid_slots_[target_] == other.qid_slots_[other.target_];
+			}
+		}
+		if (this->is_x_rotation()) {
+			// Check if the target of the 'this' gate affects the controls
+			// of 'other' gate
+			for (auto i = 0u; i < max_num_qubits; ++i) {
+				if (i != other.target_ && other.qid_slots_[i] == qid_slots_[target_]) {
+					return true;
+				}
+			}
+			if (other.is_z_rotation()) {
+				return qid_slots_[target_] == other.qid_slots_[other.target_];
+			}
+			if (other.is_x_rotation()) {
+				// Check if the target of the 'other' gate affects the controls
+				// of 'this' gate
+				for (auto i = 0u; i < max_num_qubits; ++i) {
+					if (i != target_
+					    && qid_slots_[i] == other.qid_slots_[other.target_]) {
+						return true;
+					}
+				}
+				return false;
+			}
+		}
+		return true;
+	}
 #pragma endregion
 
 #pragma region Const iterators
@@ -144,6 +191,24 @@ public:
 	{
 		// assert(!is_meta());
 		fn(qid_slots_[target_]);
+	}
+#pragma endregion
+
+#pragma region Overloads
+	bool operator==(mcst_gate const& other) const
+	{
+		if (operation() != other.operation()) {
+			return false;
+		}
+		if (target_ != other.target_) {
+			return false;
+		}
+		for (auto i = 0u; i < max_num_qubits; ++i) {
+			if (qid_slots_[i] != other.qid_slots_[i]) {
+				return false;
+			}
+		}
+		return true;
 	}
 #pragma endregion
 

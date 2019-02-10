@@ -102,6 +102,11 @@ public:
 	{
 		return qid.index();
 	}
+
+	bool is_dependent(mcmt_gate const& other) const
+	{
+		return ((controls_ & other.targets_) != 0);
+	}
 #pragma endregion
 
 #pragma region Const iterators
