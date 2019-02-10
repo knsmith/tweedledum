@@ -104,6 +104,16 @@ public:
 		return storage_->nodes[node_ptr.index];
 	}
 
+	node_type& get_input(qubit_id qid) const
+	{
+		return storage_->nodes[storage_->inputs.at(qid.index())];
+	}
+
+	node_type& get_output(qubit_id qid) const
+	{
+		return storage_->outputs.at(qid.index());
+	}
+
 	auto node_to_index(node_type const& node) const
 	{
 		if (node.gate.is(gate_set::output)) {
