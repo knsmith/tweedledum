@@ -10,6 +10,14 @@ Views can modify the implementation of a network interface by
 Views implement the network interface and can be passed like a network to an
 algorithm. Several views are implemented in tweedledum.
 
+`dependencies_view`: Compute real dependencies 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Header:** ``tweedledum/views/dependencies_view.hpp``
+
+.. doxygenclass:: tweedledum::dependencies_view
+   :members:
+
 `depth_view`: Compute levels and depth
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
