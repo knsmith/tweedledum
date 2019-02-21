@@ -1,7 +1,7 @@
 /*--------------------------------------------------------------------------------------------------
 | This file is distributed under the MIT License.
 | See accompanying file /LICENSE for details.
-| Author(s): Bruno Schmitt
+| Author(s): Bruno Schmitt, Kate Smith
 *-------------------------------------------------------------------------------------------------*/
 #pragma once
 
@@ -53,7 +53,7 @@ void write_quil(Network const& network, std::ostream& os)
 
                 case gate_set::pauli_z:
 			gate.foreach_target([&](auto target) { os << fmt::format("Z {}\n", target); });
-			break;
+                        break;
 
 		case gate_set::t:
 			gate.foreach_target([&](auto target) { os << fmt::format("T {}\n", target); });
@@ -82,17 +82,7 @@ void write_quil(Network const& network, std::ostream& os)
 				}
 			});
 			break;
-		
-		case gate_set::swap: {
-			std::vector<qubit_id> targets;
-			gate.foreach_target([&](auto target) {
-				targets.push_back(target);
-			});
-			os << fmt::format("CNOT {} {}\n", targets[0], targets[1]);
-			os << fmt::format("CNOT {} {}\n", targets[1], targets[0]);
-			os << fmt::format("CNOT {} {}\n", targets[0], targets[1]);
-		} break;
-
+                
                 case gate_set::cz:
 			gate.foreach_control([&](auto control) {
 				if (control.is_complemented()) {
@@ -105,9 +95,19 @@ void write_quil(Network const& network, std::ostream& os)
 					os << fmt::format("X {}\n", control.index());
 				}
 			});
-			break;
+                        break;
+		
+		case gate_set::swap: {
+			std::vector<qubit_id> targets;
+			gate.foreach_target([&](auto target) {
+				targets.push_back(target);
+			});
+			os << fmt::format("CNOT {} {}\n", targets[0], targets[1]);
+			os << fmt::format("CNOT {} {}\n", targets[1], targets[0]);
+			os << fmt::format("CNOT {} {}\n", targets[0], targets[1]);
+		} break;
 
-		case gate_set::mcx:
+		case gate_set::mcx: {
 			std::vector<qubit_id> controls;
 			std::vector<qubit_id> targets;
 			gate.foreach_control([&](auto control) {
