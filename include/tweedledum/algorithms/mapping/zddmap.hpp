@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <chrono>
+#include <ctime>
 
 #include <tweedledum/algorithms/synthesis/stg.hpp>
 #include <tweedledum/gates/mcst_gate.hpp>
@@ -686,7 +688,9 @@ public:
 	}
 
 	void run(){
-		// zdd_.build_tautologies();
+		auto start = std::chrono::system_clock::now(); //start of function
+                
+                // zdd_.build_tautologies();
 		init_from();
 		init_to();
 		init_valid();
@@ -747,6 +751,7 @@ public:
 		global_swap_layers = *set_vector;
 		delete set_vector;
 
+                auto swap_layers_built = std::chrono::system_clock::now()-start; //swap layer zdd built
 
         	//below is where we look for maps!
 		circ_.foreach_cgate([&](auto const& n) {
@@ -900,7 +905,10 @@ public:
 				++ctr;
 			}
 		});
-		//zdd_.ref(m);
+		
+                auto maps_found = std::chrono::system_clock::now() - swap_layers_built - start; //sets for maps found
+                
+                //zdd_.ref(m);
 		mappings.push_back(m);
         
         	std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
@@ -1027,13 +1035,13 @@ public:
 			write_unicode(network2);
 		}
 
-                
-        
+                auto new_crk_made = std::chrono::system_clock::now() - maps_found - swap_layers_built - start; //circuit made
+
 		uint32_t max_depth_index = std::max_element(network2_depth.begin(), network2_depth.end())-network2_depth.begin();
         	uint32_t max_depth = network2_depth[max_depth_index];
 		std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
 
-                std::string file_name = "qft_4_zdd_mapped.quil";
+                std::string file_name = "barenco_tof_5_zdd_mapped.quil";
                 write_quil(network2,file_name);
                 std::ofstream ckt_file;
                 ckt_file.open(file_name,std::ios_base::app);
@@ -1061,6 +1069,13 @@ public:
 			zdd_.deref(f);
 		zdd_.garbage_collect();
 		// zdd_.debug();
+
+                std::chrono::duration<double> swap_layers_built_sec = swap_layers_built;
+                std::chrono::duration<double> maps_found_sec = maps_found;
+                std::chrono::duration<double> new_crk_made_sec = new_crk_made;
+
+                std::cout << "Timing:\nSWAP layers zdd: " << swap_layers_built_sec.count() << " |Mapping set search : " << maps_found_sec.count() << " |New circuit made:" << new_crk_made_sec.count() <<"\n";
+                
 	}
 
 private:
