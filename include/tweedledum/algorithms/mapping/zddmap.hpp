@@ -442,7 +442,8 @@ public:
 
 	void garbage_collect()
 	{
-		std::vector<node> to_delete;
+		auto start_garbage = std::chrono::system_clock::now();
+                std::vector<node> to_delete;
 		/* skip terminals and elementary nodes */
 		for (auto it = nodes.begin() + unique_table.size() + 2; it != nodes.end(); ++it) {
 			if (it->ref == 0 && it->dead == 0) {
@@ -467,6 +468,9 @@ public:
 		}
 
 		//compute3_table.clear(); /* TODO: selective delete? */
+                auto end_garbage = std::chrono::system_clock::now() - start_garbage;
+                std::chrono::duration<double> end_garbage_sec = end_garbage;
+                std::cout << "Garbage collection time : " << end_garbage_sec.count() << "\n";
 	}
 
 private:
@@ -690,6 +694,12 @@ public:
 	void run(){
 		auto start = std::chrono::system_clock::now(); //start of function
                 
+                uint32_t depth_weight = 0;
+                uint32_t map_weight = 1;
+		double swap_weight = 1;
+                bool mapping_found = true;
+
+
                 // zdd_.build_tautologies();
 		init_from();
 		init_to();
@@ -755,7 +765,7 @@ public:
 
         	//below is where we look for maps!
 		circ_.foreach_cgate([&](auto const& n) {
-			if (n.gate.is_double_qubit()){
+			if (n.gate.is_double_qubit() && mapping_found != false){
 				n.gate.foreach_control([&](auto _c) { c = _c; });
 				n.gate.foreach_target([&](auto _t) { t = _t; });
 				if (m == zdd_.bot()){
@@ -836,11 +846,8 @@ public:
                             				}
 
 						}
-                        			//USE BELOW TO SET WEIGHTS FOR SCORE FUNCTION
+                        			//USE BELOW TO SET SCORE for layers
                         			std::vector<double> scores(global_swap_layers.size(),0);
-                        			uint32_t depth_weight = 0;
-                        			uint32_t map_weight = 1;
-						double swap_weight = 1;
                         
                         			for(uint32_t index = 0; index < depth_count.size(); index ++){
                             				double inv_swap_cnt;
@@ -863,12 +870,17 @@ public:
 
                         			if (max_score == 0){
 							std::cout << "A SWAP operation could not be found. Map cannot extend. Exiting...\n";
-                            				std::cout << "Metrics before exit:\n";
+                            				std::cout << "Metrics before stop :\n";
                             				std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
                             				for(uint32_t i = 0; i<swapped_qubits.size(); i++ ){
                                 				std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
                             				}
-                            				std::exit(0);
+                            				mapping_found = false;
+                                                        std::exit(0);
+                                                        
+
+
+
                         			}
                         			else{
                             				for(auto const& item : global_swap_layers[max_index]){
@@ -1041,7 +1053,7 @@ public:
         	uint32_t max_depth = network2_depth[max_depth_index];
 		std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
 
-                std::string file_name = "barenco_tof_5_zdd_mapped.quil";
+                std::string file_name = "tof_3_zdd_mapped.quil";
                 write_quil(network2,file_name);
                 std::ofstream ckt_file;
                 ckt_file.open(file_name,std::ios_base::app);
@@ -1070,11 +1082,15 @@ public:
 		zdd_.garbage_collect();
 		// zdd_.debug();
 
+                auto end_time = std::chrono::system_clock::now()-start;
+
                 std::chrono::duration<double> swap_layers_built_sec = swap_layers_built;
                 std::chrono::duration<double> maps_found_sec = maps_found;
                 std::chrono::duration<double> new_crk_made_sec = new_crk_made;
+                std::chrono::duration<double> end_time_sec = end_time;
 
-                std::cout << "Timing:\nSWAP layers zdd: " << swap_layers_built_sec.count() << " |Mapping set search : " << maps_found_sec.count() << " |New circuit made:" << new_crk_made_sec.count() <<"\n";
+                std::cout << "Timing:\nSWAP layers zdd: " << swap_layers_built_sec.count() << " |Mapping set search : " << maps_found_sec.count() 
+                << " |New circuit made: " << new_crk_made_sec.count() << " |Total time: " << end_time_sec.count() <<"\n";
                 
 	}
 
