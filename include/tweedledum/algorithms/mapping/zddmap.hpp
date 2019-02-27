@@ -697,8 +697,6 @@ public:
                 uint32_t depth_weight = 0;
                 uint32_t map_weight = 1;
 		double swap_weight = 1;
-                bool mapping_found = true;
-
 
                 // zdd_.build_tautologies();
 		init_from();
@@ -724,6 +722,9 @@ public:
         	std::vector<uint32_t> index_of_swap;
         	//vector that holds the qubits implemented swaps
         	std::vector<std::vector<uint32_t>> swapped_qubits;
+                //vector that holds index of new maps
+                std::vector<uint32_t> index_new_map;
+                index_new_map.push_back(0); // first map always starts at zero-index two qubit gate
 
 
 		//build ZDD that represents all swaps that can be done in parallel 
@@ -765,7 +766,7 @@ public:
 
         	//below is where we look for maps!
 		circ_.foreach_cgate([&](auto const& n) {
-			if (n.gate.is_double_qubit() && mapping_found != false){
+			if (n.gate.is_double_qubit()){
 				n.gate.foreach_control([&](auto _c) { c = _c; });
 				n.gate.foreach_target([&](auto _t) { t = _t; });
 				if (m == zdd_.bot()){
@@ -875,11 +876,22 @@ public:
                             				for(uint32_t i = 0; i<swapped_qubits.size(); i++ ){
                                 				std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
                             				}
-                            				mapping_found = false;
-                                                        std::exit(0);
-                                                        
+                                                        //std::exit(0);
 
+                                                        zdd_.ref(m);
+                                                        mappings.push_back(m);
+                                                        //m = zdd.bot(); // m_next;
+                                                        //zdd_.ref(m);
+                                                        //zdd_.garbage_collect();
+                                                        //zdd_.deref(m);
+                                                        index_new_map.push_back(ctr);
 
+                                                        std::iota(edge_perm_.begin(), edge_perm_.end(), 0u);
+                                                        zdd_.deref(valid_);
+                                                        zdd_.garbage_collect();
+                                                        init_valid();
+                                                        m = map(c, t);
+                                                        zdd_.ref(m);
 
                         			}
                         			else{
@@ -920,7 +932,7 @@ public:
 		
                 auto maps_found = std::chrono::system_clock::now() - swap_layers_built - start; //sets for maps found
                 
-                //zdd_.ref(m);
+                zdd_.ref(m);
 		mappings.push_back(m);
         
         	std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
@@ -930,16 +942,44 @@ public:
             		std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
             
         	}
-        	std::cout << "\n";
-        
 
-        	//retrieve all sets to pick one for new map
-        	for (auto const& map : mappings){
-			std::vector< std::vector<uint32_t>> *set_vector = new std::vector< std::vector<uint32_t>>();
-			zdd_.sets_to_vector(map,set_vector);
-			global_found_sets = *set_vector;
-			delete set_vector; 
-		}
+
+
+                //holds the size of each map
+                std::vector<uint32_t> map_coverage;
+                for(uint32_t i = 0; i<index_new_map.size(); i++ ){
+                        std::cout << index_new_map[i] << "\n";
+                        if( i == index_new_map.size()-1){
+                                map_coverage.push_back(ctr-index_new_map[i]);
+                                std::cout << ctr-index_new_map[i] << "\n";
+                        }
+                        else{
+                                map_coverage.push_back(index_new_map[i+1]-index_new_map[i]);
+                                std::cout << index_new_map[i+1]-index_new_map[i] << "\n";
+                        }
+                        
+                }
+
+
+                uint32_t loc_max_map_coverage = std::max_element(map_coverage.begin(), map_coverage.end())-map_coverage.begin();
+                uint32_t partition_start;
+                for(uint32_t i = 0; i<index_of_swap.size(); i++ ){
+                        if(index_of_swap[i]>=index_new_map[loc_max_map_coverage]){
+                                partition_start = i;
+                                break;
+                        }
+                }
+                std::cout <<"partition start " << partition_start <<" value" <<index_of_swap[partition_start]<< "\n";
+
+
+
+
+        	//retrieve all sets from largest partition to pick one for new map
+                std::vector< std::vector<uint32_t>> *set_vector2 = new std::vector< std::vector<uint32_t>>();
+                zdd_.sets_to_vector(mappings[loc_max_map_coverage],set_vector2);
+                global_found_sets = *set_vector2;
+                delete set_vector2;
+
         
 		// THIS BELOW CHOOSES THE SET TO MAP NEW CIRCUIT TO!
         	uint32_t set_to_use = 0;
@@ -967,18 +1007,20 @@ public:
         	}
         
         	ctr = 0;
-        	uint32_t index_counter = 0;
+        	uint32_t index_counter = partition_start;//start at first 2q gate in partition
         	circ_.foreach_cgate([&](auto const& n) {
             		if (n.gate.is_double_qubit()){
                 		//keep track and include SWAPS
                 		n.gate.foreach_control([&](auto _c) { c = _c; });
                 		n.gate.foreach_target([&](auto _t) { t = _t; });
                 		//std::cout <<std::string(1, 'a' + c)  << " " << std::string(1, 'a' + t) << "\n";
-	
+                                
+                                //need condition below to prevent seg faults if no swaps are required for circuit
                 		if(index_of_swap.size() !=0){
-                                        //need condition above to prevent seg faults if no swaps are required for circuit
-                                        if(ctr == index_of_swap[index_counter]){
-					        while(ctr == index_of_swap[index_counter]){
+                                        //if 2q gate is one that needs swap, and its in the correct partition range, add it!
+                                        if(ctr == index_of_swap[index_counter] && (ctr < (index_new_map[loc_max_map_coverage]+ map_coverage[loc_max_map_coverage] ))){
+					        //sometimes multiple swaps from layers are needed...
+                                                while(ctr == index_of_swap[index_counter]){
 						        //insert as many swaps that are needed in a particular spot
 						        network2.add_gate(gate::cx,qubit_id(swapped_qubits[index_counter][0]),qubit_id(swapped_qubits[index_counter][1]));
 						        network2.add_gate(gate::cx,qubit_id(swapped_qubits[index_counter][1]),qubit_id(swapped_qubits[index_counter][0]));
@@ -1053,7 +1095,7 @@ public:
         	uint32_t max_depth = network2_depth[max_depth_index];
 		std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
 
-                std::string file_name = "tof_3_zdd_mapped.quil";
+                std::string file_name = "vbe_adder_zdd_mapped_eval.quil";
                 write_quil(network2,file_name);
                 std::ofstream ckt_file;
                 ckt_file.open(file_name,std::ios_base::app);

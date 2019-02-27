@@ -265,7 +265,7 @@ netlist<mcst_gate> make_network_from_quil(std::string file_name){
 // }
 
 TEST_CASE("Test reading in quil", "[zddmap]"){
-        std::string bench_name = "../examples/quil_benchmarks/tof_3.quil";
+        std::string bench_name = "../examples/quil_benchmarks/vbe_adder.quil";
         netlist<mcst_gate> network = make_network_from_quil(bench_name);
         find_maximal_partitions(network, ring(network.num_qubits()));
 
