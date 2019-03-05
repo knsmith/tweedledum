@@ -470,7 +470,7 @@ public:
 		//compute3_table.clear(); /* TODO: selective delete? */
                 auto end_garbage = std::chrono::system_clock::now() - start_garbage;
                 std::chrono::duration<double> end_garbage_sec = end_garbage;
-                std::cout << "Garbage collection time : " << end_garbage_sec.count() << "\n";
+                //std::cout << "Garbage collection time : " << end_garbage_sec.count() << "\n";
 	}
 
 private:
@@ -948,14 +948,14 @@ public:
                 //holds the size of each map
                 std::vector<uint32_t> map_coverage;
                 for(uint32_t i = 0; i<index_new_map.size(); i++ ){
-                        std::cout << index_new_map[i] << "\n";
+                        std::cout << "gate index " << index_new_map[i] << "\n";
                         if( i == index_new_map.size()-1){
                                 map_coverage.push_back(ctr-index_new_map[i]);
-                                std::cout << ctr-index_new_map[i] << "\n";
+                                std::cout << "size " << ctr-index_new_map[i] << "\n";
                         }
                         else{
                                 map_coverage.push_back(index_new_map[i+1]-index_new_map[i]);
-                                std::cout << index_new_map[i+1]-index_new_map[i] << "\n";
+                                std::cout << "size " << index_new_map[i+1]-index_new_map[i] << "\n";
                         }
                         
                 }
@@ -984,14 +984,29 @@ public:
 		// THIS BELOW CHOOSES THE SET TO MAP NEW CIRCUIT TO!
         	uint32_t set_to_use = 0;
 
-        	std::vector <uint32_t> chosen_mapping(circ_.num_qubits(),0); //index is pseudo, what is stored is the mapping
+        	std::vector <uint32_t> used_phys_qubits;
+                std::vector <int> chosen_mapping(circ_.num_qubits(),-1); //index is pseudo, what is stored is the mapping
         	for(auto const& item:global_found_sets[set_to_use]){
             		uint32_t pseudo_qubit = item /circ_.num_qubits();
             		uint32_t physical_qubit = item % circ_.num_qubits();
             		chosen_mapping[pseudo_qubit] = physical_qubit;
+                        used_phys_qubits.push_back(physical_qubit);
         	}
-        
-       		std::vector <uint32_t> current_mapping = chosen_mapping;
+                std::vector <uint32_t> unused_phys_qubits;
+                for(int i = 0; i< chosen_mapping.size() ;i++){
+                        if(std::find(used_phys_qubits.begin(), used_phys_qubits.end(), i) == used_phys_qubits.end()){
+                                unused_phys_qubits.push_back(i);
+                        }
+                }
+                uint32_t qubit_ctr = 0;
+                for(int i = 0; i< chosen_mapping.size() ;i++){
+                        if(chosen_mapping[i]==-1){
+                                chosen_mapping[i] = unused_phys_qubits[qubit_ctr];
+                                qubit_ctr++;
+                        }
+                }
+
+       		std::vector <int> current_mapping = chosen_mapping;
                 
         
         	//make new circuit here
@@ -1030,8 +1045,8 @@ public:
 						        network2_depth[swapped_qubits[index_counter][0]] = network2_depth[swapped_qubits[index_counter][0]] + 3;
 						        network2_depth[swapped_qubits[index_counter][1]] = network2_depth[swapped_qubits[index_counter][1]] + 3;
 						        q2_gate_count= q2_gate_count + 3;
-
-                	    			        //adjust qubits in current mapping
+                	    			        
+                                                        //adjust qubits in current mapping
                 	    			        auto itr0 = std::find(current_mapping.begin(), current_mapping.end(), swapped_qubits[index_counter][0]);
                 	    			        auto itr1 = std::find(current_mapping.begin(), current_mapping.end(), swapped_qubits[index_counter][1]);
 	
@@ -1049,6 +1064,8 @@ public:
 						        q2_gate_count++;
 	
                 	    			        index_counter++;
+
+                                                
 
 					        }
 
@@ -1095,7 +1112,7 @@ public:
         	uint32_t max_depth = network2_depth[max_depth_index];
 		std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
 
-                std::string file_name = "vbe_adder_zdd_mapped_eval.quil";
+                std::string file_name = "vbe_adder_mapped_eval.quil";
                 write_quil(network2,file_name);
                 std::ofstream ckt_file;
                 ckt_file.open(file_name,std::ios_base::app);
