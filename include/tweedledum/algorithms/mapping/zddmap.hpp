@@ -25,6 +25,7 @@
 #include <tweedledum/io/write_unicode.hpp>
 #include <tweedledum/networks/netlist.hpp>
 #include <tweedledum/io/quil.hpp>
+#include <tweedledum/views/pathsum_view.hpp>
 
 
 
@@ -676,6 +677,59 @@ private:
 
 namespace detail {
 
+void create_pathsum(netlist<mcst_gate> original_nwk, netlist<mcst_gate> new_nwk){
+        netlist<mcst_gate> original_nwk_cx;
+        netlist<mcst_gate> new_nwk_cx;
+        uint32_t c, t;
+        for(uint32_t i = 0; i< original_nwk.num_qubits(); i++){
+            		original_nwk_cx.add_qubit();
+                        new_nwk_cx.add_qubit();
+        	}
+        original_nwk.foreach_cgate([&](auto const& n) {
+                if (n.gate.is_double_qubit()){
+                        n.gate.foreach_control([&](auto _c) { c = _c; });
+                	n.gate.foreach_target([&](auto _t) { t = _t; });
+                        original_nwk_cx.add_gate(n.gate,qubit_id(c),qubit_id(t));
+                }
+
+        });
+        new_nwk.foreach_cgate([&](auto const& n) {
+                if (n.gate.is_double_qubit()){
+                        n.gate.foreach_control([&](auto _c) { c = _c; });
+                	n.gate.foreach_target([&](auto _t) { t = _t; });
+                        new_nwk_cx.add_gate(n.gate,qubit_id(c),qubit_id(t));
+                }
+
+        });
+
+        pathsum_view sums(original_nwk_cx);
+
+        std::cout << "pathsums original network: \n";
+	sums.foreach_coutput([&](auto const& node) {
+		auto& sum = sums.get_pathsum(node);
+		for (auto e : sum) {
+			std::cout << e << ' ';
+		}
+		std::cout << '\n';
+	});
+
+        pathsum_view sums2(new_nwk_cx);
+
+        std::cout << "pathsums mapped network: \n";
+	sums2.foreach_coutput([&](auto const& node) {
+		auto& sum2 = sums2.get_pathsum(node);
+		for (auto e : sum2) {
+			std::cout << e << ' ';
+		}
+		std::cout << '\n';
+	});
+
+        write_unicode(original_nwk_cx);
+        write_unicode(new_nwk_cx);
+
+
+}
+
 template<typename Ntk>
 class find_maximal_partitions_impl {
 public:
@@ -959,7 +1013,7 @@ public:
                         }
                         
                 }
-
+                
 
                 uint32_t loc_max_map_coverage = std::max_element(map_coverage.begin(), map_coverage.end())-map_coverage.begin();
                 uint32_t partition_start;
@@ -969,10 +1023,6 @@ public:
                                 break;
                         }
                 }
-                std::cout <<"partition start " << partition_start <<" value" <<index_of_swap[partition_start]<< "\n";
-
-
-
 
         	//retrieve all sets from largest partition to pick one for new map
                 std::vector< std::vector<uint32_t>> *set_vector2 = new std::vector< std::vector<uint32_t>>();
@@ -992,12 +1042,15 @@ public:
             		chosen_mapping[pseudo_qubit] = physical_qubit;
                         used_phys_qubits.push_back(physical_qubit);
         	}
+
+
                 std::vector <uint32_t> unused_phys_qubits;
                 for(int i = 0; i< chosen_mapping.size() ;i++){
                         if(std::find(used_phys_qubits.begin(), used_phys_qubits.end(), i) == used_phys_qubits.end()){
                                 unused_phys_qubits.push_back(i);
                         }
                 }
+
                 uint32_t qubit_ctr = 0;
                 for(int i = 0; i< chosen_mapping.size() ;i++){
                         if(chosen_mapping[i]==-1){
@@ -1007,8 +1060,8 @@ public:
                 }
 
        		std::vector <int> current_mapping = chosen_mapping;
-                
-        
+
+
         	//make new circuit here
         	using namespace tweedledum;
 
@@ -1112,11 +1165,21 @@ public:
         	uint32_t max_depth = network2_depth[max_depth_index];
 		std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
 
-                std::string file_name = "vbe_adder_mapped_eval.quil";
+                std::string file_name = "mod5_4-mapped.quil";
                 write_quil(network2,file_name);
                 std::ofstream ckt_file;
                 ckt_file.open(file_name,std::ios_base::app);
                 ckt_file << "#DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
+                ckt_file <<"#CHOSEN MAPPING :";
+                for (auto const& item : chosen_mapping){
+                        ckt_file << item << " ";
+                }
+                ckt_file <<"\n";
+                ckt_file <<"#LAST CURRENT MAPPING :";
+                for (auto const& item : current_mapping){
+                        ckt_file << item << " ";
+                }
+                ckt_file <<"\n";
 
 		uint32_t total = 0;
         	std::cout<< "\n";
@@ -1150,6 +1213,7 @@ public:
 
                 std::cout << "Timing:\nSWAP layers zdd: " << swap_layers_built_sec.count() << " |Mapping set search : " << maps_found_sec.count() 
                 << " |New circuit made: " << new_crk_made_sec.count() << " |Total time: " << end_time_sec.count() <<"\n";
+                create_pathsum(circ_, network2);
                 
 	}
 
