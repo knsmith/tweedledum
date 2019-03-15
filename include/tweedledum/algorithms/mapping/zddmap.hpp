@@ -20,23 +20,17 @@
 #include <chrono>
 #include <ctime>
 
-#include <tweedledum/algorithms/synthesis/stg.hpp>
-#include <tweedledum/gates/mcst_gate.hpp>
-#include <tweedledum/io/write_unicode.hpp>
-#include <tweedledum/networks/netlist.hpp>
-#include <tweedledum/io/quil.hpp>
-#include <tweedledum/views/pathsum_view.hpp>
+#include "tweedledum/algorithms/synthesis/stg.hpp"
+#include "tweedledum/gates/mcst_gate.hpp"
+#include "tweedledum/io/write_unicode.hpp"
+#include "tweedledum/networks/netlist.hpp"
+#include "tweedledum/io/quil.hpp"
+#include "tweedledum/views/pathsum_view.hpp"
+#include "tweedledum/utils/device.hpp"
 
 
 
 namespace tweedledum {
-
-#pragma region device data structure(to be moved)
-struct device_t {
-	std::vector<std::pair<uint8_t, uint8_t>> edges;
-	uint8_t num_vertices;
-};
-#pragma endregion
 
 #pragma region ZDD package
 class zdd_base {
@@ -675,71 +669,38 @@ private:
 };
 #pragma endregion
 
-namespace detail {
 
-void create_pathsum(netlist<mcst_gate> original_nwk, netlist<mcst_gate> new_nwk){
-        netlist<mcst_gate> original_nwk_cx;
-        netlist<mcst_gate> new_nwk_cx;
-        uint32_t c, t;
-        for(uint32_t i = 0; i< original_nwk.num_qubits(); i++){
-            		original_nwk_cx.add_qubit();
-                        new_nwk_cx.add_qubit();
-        	}
-        original_nwk.foreach_cgate([&](auto const& n) {
-                if (n.gate.is_double_qubit()){
-                        n.gate.foreach_control([&](auto _c) { c = _c; });
-                	n.gate.foreach_target([&](auto _t) { t = _t; });
-                        original_nwk_cx.add_gate(n.gate,qubit_id(c),qubit_id(t));
-                }
+struct find_maximal_partitions_params
+{
+        std::string mapped_filename = "zdd_mapped.quil";
 
-        });
-        new_nwk.foreach_cgate([&](auto const& n) {
-                if (n.gate.is_double_qubit()){
-                        n.gate.foreach_control([&](auto _c) { c = _c; });
-                	n.gate.foreach_target([&](auto _t) { t = _t; });
-                        new_nwk_cx.add_gate(n.gate,qubit_id(c),qubit_id(t));
-                }
+        bool verbose = false;
+        bool very_verbose = false;
+};
 
-        });
+struct find_maximal_partitions_stats
+{
+        double time_swap_layers_built = 0.0;
+        double time_map_search = 0.0;
+        double time_new_crk = 0;
+        double time_total = 0.0;
+};
 
-        pathsum_view sums(original_nwk_cx);
-
-        std::cout << "pathsums original network: \n";
-	sums.foreach_coutput([&](auto const& node) {
-		auto& sum = sums.get_pathsum(node);
-		for (auto e : sum) {
-			std::cout << e << ' ';
-		}
-		std::cout << '\n';
-	});
-
-        pathsum_view sums2(new_nwk_cx);
-
-        std::cout << "pathsums mapped network: \n";
-	sums2.foreach_coutput([&](auto const& node) {
-		auto& sum2 = sums2.get_pathsum(node);
-		for (auto e : sum2) {
-			std::cout << e << ' ';
-		}
-		std::cout << '\n';
-	});
-
-        write_unicode(original_nwk_cx);
-        write_unicode(new_nwk_cx);
-
-
-}
+namespace detail
+{
 
 template<typename Ntk>
 class find_maximal_partitions_impl {
 public:
-	find_maximal_partitions_impl(Ntk const& circ, device_t const& arch)
+	find_maximal_partitions_impl(Ntk const& circ, device const& arch, find_maximal_partitions_params const& ps, find_maximal_partitions_stats& st)
 	    : circ_(circ)
 	    , arch_(arch)
+            , ps_(ps)
+            , st_(st)
 	    , zdd_(circ.num_qubits() * arch.num_vertices, 21)
 	    , from_(circ.num_qubits())
 	    , to_(arch.num_vertices)
-			, edge_perm_(arch.num_vertices, 0)
+            , edge_perm_(arch.num_vertices, 0)
 	    , fmt_(circ.num_qubits())
 	{
 		std::iota(edge_perm_.begin(), edge_perm_.end(), 0);
@@ -915,8 +876,10 @@ public:
 							scores[index] = (depth_count[index]*depth_weight + new_mappings_cnt[index]*map_weight)*((inv_swap_cnt)*swap_weight);
 
 
-							// uncomment below to see metrics used to pick swap(s)
-                            				//std::cout << index << ": depth - " << depth_count[index] << " | mappings - " << new_mappings_cnt[index] << " | swap_count - " << swap_count[index]<< " | score: " << scores[index]<< "\n";
+							//see metrics used to pick swap(s)
+                                                        if(ps_.verbose){
+                                                               std::cout << index << ": depth - " << depth_count[index] << " | mappings - " << new_mappings_cnt[index] << " | swap_count - " << swap_count[index]<< " | score: " << scores[index]<< "\n"; 
+                                                        }
 
                         			}
                         
@@ -924,13 +887,13 @@ public:
                         			int max_score = scores[max_index];
 
                         			if (max_score == 0){
-							std::cout << "A SWAP operation could not be found. Map cannot extend. Exiting...\n";
-                            				std::cout << "Metrics before stop :\n";
-                            				std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
-                            				for(uint32_t i = 0; i<swapped_qubits.size(); i++ ){
-                                				std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
-                            				}
-                                                        //std::exit(0);
+                                                        if(ps_.verbose){
+                            				        std::cout << "Metrics before partition end :\n";
+                            				        std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
+                            				        for(uint32_t i = 0; i<swapped_qubits.size(); i++ ){
+                                				        std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
+                            				        }
+                                                        }
 
                                                         zdd_.ref(m);
                                                         mappings.push_back(m);
@@ -989,27 +952,33 @@ public:
                 zdd_.ref(m);
 		mappings.push_back(m);
         
-        	std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
-        	for(uint32_t i = 0; i<swapped_qubits.size(); i++ ){
-            		//std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << swapped_qubits[i][0]<< " " <<
-            		//swapped_qubits[i][1] << "\n";
-            		std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
+        	if(ps_.verbose){
+                        std::cout << "\nTotal SWAPs: " << swapped_qubits.size() << "\n";
+        	        for(uint32_t i = 0; i<swapped_qubits.size(); i++ ){
+            		        std::cout << "Swap at gate: " <<index_of_swap[i] <<" | Physical qubits swapped: " << std::string(1, 'A' + swapped_qubits[i][0])<< " " <<std::string(1, 'A' + swapped_qubits[i][1])<< "\n";
+                        }
             
         	}
-
+                
 
 
                 //holds the size of each map
                 std::vector<uint32_t> map_coverage;
                 for(uint32_t i = 0; i<index_new_map.size(); i++ ){
-                        std::cout << "gate index " << index_new_map[i] << "\n";
+                        if(ps_.verbose){
+                                std::cout << "gate index " << index_new_map[i] << "\n";
+                        }
                         if( i == index_new_map.size()-1){
                                 map_coverage.push_back(ctr-index_new_map[i]);
-                                std::cout << "size " << ctr-index_new_map[i] << "\n";
+                                if(ps_.verbose){
+                                        std::cout << "size " << ctr-index_new_map[i] << "\n";
+                                }
                         }
                         else{
                                 map_coverage.push_back(index_new_map[i+1]-index_new_map[i]);
-                                std::cout << "size " << index_new_map[i+1]-index_new_map[i] << "\n";
+                                if(ps_.verbose){
+                                        std::cout << "size " << index_new_map[i+1]-index_new_map[i] << "\n";
+                                }
                         }
                         
                 }
@@ -1109,18 +1078,19 @@ public:
                 	    			        current_mapping[indx0]= swapped_qubits[index_counter][1];
                 	    			        current_mapping[indx1]= swapped_qubits[index_counter][0];
 
-                	    			        //insert gate
-                	    			        network2.add_gate(n.gate,qubit_id(current_mapping[c]),qubit_id(current_mapping[t]));
-						        network2_volume++;
-						        network2_depth[current_mapping[c]]= network2_depth[current_mapping[c]]+1;
-						        network2_depth[current_mapping[t]] = network2_depth[current_mapping[t]]+1;
-						        q2_gate_count++;
+                	    			        
 	
                 	    			        index_counter++;
 
                                                 
 
 					        }
+                                                //insert gate
+                	    			network2.add_gate(n.gate,qubit_id(current_mapping[c]),qubit_id(current_mapping[t]));
+						network2_volume++;
+						network2_depth[current_mapping[c]]= network2_depth[current_mapping[c]]+1;
+						network2_depth[current_mapping[t]] = network2_depth[current_mapping[t]]+1;
+						q2_gate_count++;
 
                 		        }
                 		        else{
@@ -1163,9 +1133,11 @@ public:
 
 		uint32_t max_depth_index = std::max_element(network2_depth.begin(), network2_depth.end())-network2_depth.begin();
         	uint32_t max_depth = network2_depth[max_depth_index];
-		std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
+                if(ps_.verbose){
+                        std::cout <<"DEPTH: "<< max_depth<< " | VOL.: " << network2_volume << " | 2Q GATE COUNT: " << q2_gate_count <<"\n";
+                }
 
-                std::string file_name = "mod5_4-mapped.quil";
+                std::string file_name = ps_.mapped_filename;
                 write_quil(network2,file_name);
                 std::ofstream ckt_file;
                 ckt_file.open(file_name,std::ios_base::app);
@@ -1182,20 +1154,28 @@ public:
                 ckt_file <<"\n";
 
 		uint32_t total = 0;
-        	std::cout<< "\n";
-		for (auto const& map : mappings) {
-			std::cout << "found mapping with " << zdd_.count_sets(map)<< " mappings using " << zdd_.count_nodes(map) << " nodes.\n";
-			total += zdd_.count_sets(map);
+                if(ps_.verbose){
+                       std::cout<< "\n";
+		        for (auto const& map : mappings) {
+			        std::cout << "found mapping with " << zdd_.count_sets(map)<< " mappings using " << zdd_.count_nodes(map) << " nodes.\n";
+			        total += zdd_.count_sets(map);
       
-            		//below prints the found mappings in partition
-           		std::cout << "\nfound sets: \n";
-            		zdd_.print_sets(map, fmt_);
-            		std::cout << "\n";
+            		        //below prints the found mappings in partition
+           		        std::cout << "\nfound sets: \n";
+            		        zdd_.print_sets(map, fmt_);
+            		        std::cout << "\n";
             
-			zdd_.deref(map);
-		}
-		zdd_.summary();
-		std::cout << "Total mappings: " << total << "\n";
+			        zdd_.deref(map);
+		        }
+		        zdd_.summary();
+		        std::cout << "Total mappings: " << total << "\n"; 
+                }
+                if(ps_.verbose==false){
+		        for (auto const& map : mappings) {
+			        zdd_.deref(map);
+		        }
+                }
+        	
 
 		zdd_.deref(valid_);
 		zdd_.deref(bad_);
@@ -1211,9 +1191,15 @@ public:
                 std::chrono::duration<double> new_crk_made_sec = new_crk_made;
                 std::chrono::duration<double> end_time_sec = end_time;
 
-                std::cout << "Timing:\nSWAP layers zdd: " << swap_layers_built_sec.count() << " |Mapping set search : " << maps_found_sec.count() 
-                << " |New circuit made: " << new_crk_made_sec.count() << " |Total time: " << end_time_sec.count() <<"\n";
-                create_pathsum(circ_, network2);
+                st_.time_swap_layers_built = swap_layers_built_sec.count();
+                st_.time_map_search = maps_found_sec.count();
+                st_.time_new_crk = new_crk_made_sec.count();
+                st_.time_total = end_time_sec.count();
+                
+                create_pathsum(circ_, network2, chosen_mapping);
+
+
+                
                 
 	}
 
@@ -1275,9 +1261,78 @@ private:
 		return zdd_.intersection(zdd_.join(from_[c], from_[t]), valid_);
 	}
 
+        void create_pathsum(netlist<mcst_gate> original_nwk, netlist<mcst_gate> new_nwk, std::vector<int>& map){
+                netlist<mcst_gate> original_nwk_cx;
+                netlist<mcst_gate> new_nwk_cx;
+                uint32_t c, t;
+                for(uint32_t i = 0; i< original_nwk.num_qubits(); i++){
+            		original_nwk_cx.add_qubit();
+                        new_nwk_cx.add_qubit();
+        	}
+                original_nwk.foreach_cgate([&](auto const& n) {
+                        if (n.gate.is_double_qubit()){
+                                n.gate.foreach_control([&](auto _c) { c = _c; });
+                	        n.gate.foreach_target([&](auto _t) { t = _t; });
+                                original_nwk_cx.add_gate(n.gate,qubit_id(c),qubit_id(t));
+                        }
+
+                });
+                new_nwk.foreach_cgate([&](auto const& n) {
+                        if (n.gate.is_double_qubit()){
+                                n.gate.foreach_control([&](auto _c) { c = _c; });
+                	        n.gate.foreach_target([&](auto _t) { t = _t; });
+                                new_nwk_cx.add_gate(n.gate,qubit_id(c),qubit_id(t));
+                        }
+
+                });
+
+	        std::vector<int> dummy(map.size(), 0);
+	        std::iota(dummy.begin(), dummy.end(), 0);
+                pathsum_view sums(original_nwk_cx, dummy);
+                pathsum_view sums2(new_nwk_cx, map);
+
+                if(ps_.verbose){
+                        std::cout << "pathsums original network: \n";
+	                sums.foreach_coutput([&](auto const& node) {
+		                auto& sum = sums.get_pathsum(node);
+		                for (auto e : sum) {
+			                std::cout << e << ' ';
+		                }
+		                std::cout << '\n';
+	                });
+
+                        std::cout << "pathsums mapped network: \n";
+	                sums2.foreach_coutput([&](auto const& node) {
+		                auto& sum2 = sums2.get_pathsum(node);
+		                for (auto e : sum2){
+			                std::cout << e << ' ';
+		                }
+		                std::cout << '\n';
+	                });
+
+                
+                }
+	        auto num_ok = 0;
+	        sums.foreach_coutput([&](auto const& node) {
+		        auto& sum = sums.get_pathsum(node);
+		        sums2.foreach_coutput([&](auto const& node) {
+			        auto& sum2 = sums2.get_pathsum(node);
+			        if (sum == sum2) {
+				        num_ok++;
+			        }
+		        });
+	        });
+	        //std::cout << "num: " << num_ok << '\n';
+	        assert(num_ok == sums.num_qubits());
+
+
+        }
+
 private:
 	Ntk const& circ_;
-	device_t const& arch_;
+	device const& arch_;
+        find_maximal_partitions_params const& ps_;
+        find_maximal_partitions_stats& st_;
 
 	zdd_base zdd_;
 	std::vector<zdd_base::node> from_, to_;
@@ -1302,69 +1357,15 @@ private:
 } // namespace detail
 
 template<typename Ntk>
-void find_maximal_partitions(Ntk const& circ, device_t const& arch)
+void find_maximal_partitions(Ntk const& circ, device const& arch, find_maximal_partitions_params const& ps = {}, find_maximal_partitions_stats* pst = nullptr )
 {
-#if 0
-	zdd_base zdd_map(arch.edges.size());
-	zdd_map.build_tautologies();
-
-	struct edge_formatter_t {
-		edge_formatter_t(std::vector<std::pair<uint8_t, uint8_t>> const& edges)
-		    : edges(edges)
-		{}
-
-		std::string operator()(uint32_t v) const
-		{
-			return std::string(1, 'A' + edges[v].first)
-			       + std::string(1, 'A' + edges[v].second) + "(" + std::to_string(v) + ")";
-		}
-
-	private:
-		std::vector<std::pair<uint8_t, uint8_t>> const& edges;
-	} fmt(arch.edges);
-
-	std::vector<std::vector<uint8_t>> incidents(arch.num_vertices);
-	for (auto i = 0u; i < arch.edges.size(); ++i) {
-		incidents[arch.edges[i].first].push_back(i);
-		incidents[arch.edges[i].second].push_back(i);
-	}
-
-	std::vector<zdd_base::node> from;
-	for (auto& i : incidents) {
-		std::sort(i.rbegin(), i.rend());
-		auto set = zdd_map.bot();
-		for (auto o : i) {
-			set = zdd_map.union_(set, zdd_map.elementary(o));
-		}
-		from.push_back(set);
-		std::cout << "Sets = \n";
-		zdd_map.print_sets(from.back(), fmt);
-	}
-
-  auto set = zdd_map.bot();
-for (auto const& f : from) {
-    std::cout << "CHOOSE\n";
-    zdd_map.print_sets(zdd_map.choose(f, 2), fmt);
-    set = zdd_map.union_(set, zdd_map.choose(f, 2));
-  }
-
-  std::cout << "A!\n";
-  zdd_map.print_sets(set, fmt);
-
-  auto legal = zdd_map.nonsupersets(zdd_map.tautology(), set);
-  std::cout << "B!\n";
-  zdd_map.print_sets(legal, fmt);
-
-	// zdd_map.print_sets(zdd_map.tautology());
-	return;
-#endif
-
-	detail::find_maximal_partitions_impl<Ntk> impl(circ, arch);
+        find_maximal_partitions_stats st;
+	detail::find_maximal_partitions_impl<Ntk> impl(circ, arch, ps, st);
 	impl.run();
 
-	//zdd_base z(4);
-
-	//z.debug();
+        if ( pst ) {
+                *pst = st;
+        }
 }
 
 } // namespace tweedledum

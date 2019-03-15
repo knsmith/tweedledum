@@ -12,6 +12,7 @@
 #include <tweedledum/networks/gg_network.hpp>
 #include <tweedledum/views/pathsum_view.hpp>
 #include <vector>
+#include <tweedledum/io/write_unicode.hpp>
 
 TEST_CASE("Simple pathsum view", "[pathsum_view]")
 {
@@ -31,7 +32,9 @@ TEST_CASE("Simple pathsum view", "[pathsum_view]")
         network.add_gate(gate::cx,b,c);
         network.add_gate(gate::cx,b,d);
 
-	pathsum_view sums(network);
+        std::vector<int> dummy(network.num_qubits(), 0);
+        std::iota(dummy.begin(), dummy.end(), 0);
+	pathsum_view sums(network, dummy);
 
         std::cout << "pathsums: \n";
 	sums.foreach_coutput([&](auto const& node) {
@@ -41,6 +44,7 @@ TEST_CASE("Simple pathsum view", "[pathsum_view]")
 		}
 		std::cout << '\n';
 	});
+        write_unicode(network);
 
 }
 TEST_CASE("Simple pathsum view w/ SWAP", "[pathsum_view]")
@@ -59,12 +63,14 @@ TEST_CASE("Simple pathsum view w/ SWAP", "[pathsum_view]")
 	// network.add_gate(gate::hadamard, d);
         network.add_gate(gate::cx,a,b);
         network.add_gate(gate::cx,b,c);
+        network.add_gate(gate::cx,c,b);
+        network.add_gate(gate::cx,b,c);
+        network.add_gate(gate::cx,c,b);
         network.add_gate(gate::cx,c,d);
-        network.add_gate(gate::cx,d,c);
-        network.add_gate(gate::cx,c,d);
-        network.add_gate(gate::cx,b,d);
 
-	pathsum_view sums(network);
+	std::vector<int> dummy(network.num_qubits(), 0);
+        std::iota(dummy.begin(), dummy.end(), 0);
+	pathsum_view sums(network, dummy);
 
         std::cout << "pathsums: \n";
 	sums.foreach_coutput([&](auto const& node) {
@@ -74,5 +80,7 @@ TEST_CASE("Simple pathsum view w/ SWAP", "[pathsum_view]")
 		}
 		std::cout << '\n';
 	});
+
+        write_unicode(network);
 
 }
