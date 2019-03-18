@@ -7,6 +7,8 @@
 #include <chrono>
 #include <kitty/constructors.hpp>
 #include <kitty/dynamic_truth_table.hpp>
+#include "tweedledum/io/read_device.hpp"
+#include "tweedledum/utils/device.hpp"
 #include <random>
 #include <tweedledum/algorithms/mapping/zddmap.hpp>
 #include <tweedledum/algorithms/synthesis/stg.hpp>
@@ -27,62 +29,6 @@
 #include <tweedledum/gates/mcmt_gate.hpp>
 
 using namespace tweedledum;
-
-device_t ring(uint8_t m)
-{
-	std::vector<std::pair<uint8_t, uint8_t>> edges;
-	for (auto i = 0; i < m; ++i) {
-		edges.emplace_back(i, (i + 1) % m);
-	}
-	return {edges, m};
-}
-
-device_t star(uint8_t m)
-{
-	std::vector<std::pair<uint8_t, uint8_t>> edges;
-	for (auto i = 1; i < m; ++i) {
-		edges.emplace_back(0, i);
-	}
-	return {edges, m};
-}
-
-device_t grid(uint8_t w, uint8_t h)
-{
-	std::vector<std::pair<uint8_t, uint8_t>> edges;
-	for (auto x = 0; x < w; ++x) {
-		for (auto y = 0; y < h; ++y) {
-			auto e = y * w + x;
-			if (x < w - 1) {
-				edges.emplace_back(e, e + 1);
-			}
-			if (y < h - 1) {
-				edges.emplace_back(e, e + w);
-			}
-		}
-	}
-	return {edges, static_cast<uint8_t>(w * h)};
-}
-
-device_t random(uint8_t m, uint8_t num_edges)
-{
-	std::default_random_engine gen(std::chrono::system_clock::now().time_since_epoch().count());
-	std::uniform_int_distribution<uint8_t> d1(0, m - 1);
-	std::uniform_int_distribution<uint8_t> d2(1, m - 2);
-
-	std::vector<std::pair<uint8_t, uint8_t>> edges;
-	while (edges.size() != num_edges) {
-		uint8_t p = d1(gen);
-		uint8_t q = (p + d2(gen)) % m;
-		std::pair<uint8_t, uint8_t> edge{std::min(p, q), std::max(p, q)};
-		if (std::find(edges.begin(), edges.end(), edge) == edges.end()) {
-			std::cout << (int) edge.first << " " << (int) edge.second << "\n";
-			edges.push_back(edge);
-		}
-	}
-        
-
-	return {edges, m};
-}
 
 netlist<mcst_gate> make_network_from_quil(std::string file_name){
         //use this to transform quil to netlist
@@ -265,10 +211,26 @@ netlist<mcst_gate> make_network_from_quil(std::string file_name){
 // }
 
 TEST_CASE("Test reading in quil", "[zddmap]"){
-        std::string bench_name = "../examples/quil_benchmarks/dummy_file.quil";
-        netlist<mcst_gate> network = make_network_from_quil(bench_name);
+        //std::string bench_name = "../examples/quil_benchmarks/dummy_file.quil";
+        //netlist<mcst_gate> network = make_network_from_quil(bench_name);
+        netlist<mcst_gate> network;
+        network.add_qubit();
+        network.add_qubit();
+        network.add_qubit();
+        network.add_qubit();
+        
+        network.add_gate(gate::cz, 0, 1);
+        network.add_gate(gate::cz, 1, 2);
+        network.add_gate(gate::cz, 1, 3);
+        device arch = device::ring(network.num_qubits());
+        find_maximal_partitions_params ps;
+        ps.verbose = false;
+        find_maximal_partitions_stats st;
         write_unicode(network);
-        find_maximal_partitions(network, ring(network.num_qubits()));
+        find_maximal_partitions(network, arch, ps, &st); 
+
+        std::cout << fmt::format( "Total time = {:7.2f} secs\n", st.time_total );
+        std::cout << fmt::format( "Time for map search = {:7.2f} secs\n", st.time_map_search );
 
 
 
